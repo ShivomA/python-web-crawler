@@ -55,7 +55,7 @@ websites = ['http://google.com', 'http://facebook.com', 'http://instagram.com',
             'http://youtube.com', 'http://flinkhub.com']
 def isConnected(Id):
     try:
-        urllib.request.urlopen(websites[2])
+        urllib.request.urlopen(websites[random.randint(0, len(websites) - 1)])
         return True
     except:
         if Id == 0:
