@@ -9,11 +9,12 @@ import string                   # for creating string from random
 import os                       # for deleting html file on disk
 import urllib.request           # for checking internet connection
 import threading                # for implementing multi-threading
+from logger import logger       # for logging output
 
 
 # region Connecting to Database
-connection = pymongo.MongoClient()
-db = connection.myDataBase
+connection = pymongo.MongoClient(Config["URI"])
+db = connection[Config["Database_Name"]]
 collection = db.Links
 # endregion
 
@@ -26,26 +27,32 @@ sourceList = []
 while True:
     try:
         count = collection.count_documents({})
-        print("Number of documents in database are " + str(count))
+        logger.info("Number of documents in database are " + str(count))
         break
+    except KeyboardInterrupt:
+        logger.info("Program closed manually")
+        exit()
     except:
-        print("Can not connect to database")
-        print("Retrying...")
+        logger.warning("Can not connect to database")
+        logger.info("Retrying...")
 # endregion
 
 
 # region Initialize data from database
 def InitializeData():
     try:
-        print("Initializing data from database...")
+        logger.debug("Initializing data from database...")
         cursor = collection.find()
         for record in cursor:
             linksList.append(record.get("linksFound"))
             sourceList.append(record.get("sourceLink"))
-        print("Data initialized")
+        logger.debug("Data initialized")
+    except KeyboardInterrupt:
+        logger.info("Program closed manually")
+        exit()
     except:
-        print("Can not connect to database")
-        print("Retrying...")
+        logger.warning("Can not connect to database")
+        logger.info("Retrying...")
         InitializeData()
 InitializeData()
 # endregion
@@ -57,11 +64,16 @@ def isConnected(Id):
     try:
         urllib.request.urlopen(websites[random.randint(0, len(websites) - 1)])
         return True
+    except KeyboardInterrupt:
+        exit()
     except:
-        if Id == 0:
-            print("No access to internet!")
-            print("Retrying in " + str(Config["Wait_Time"]) + " seconds")
-        time.sleep(Config["Wait_Time"])
+        try:
+            if Id == 0:
+                logger.warning("No access to internet!")
+                logger.info("Retrying in " + str(Config["Wait_Time"]) + " seconds")
+            time.sleep(Config["Wait_Time"])
+        except KeyboardInterrupt:
+            exit()
         return isConnected(Id)
 
 
@@ -115,10 +127,12 @@ def AddData(Id, link, sourceLink, isCrawled, statusCode, contentType, contentLen
             collection.insert_one(linkDicts[Id])
             linkDicts[Id].clear()
             break
+        except KeyboardInterrupt:
+            exit()
         except:
             if Id == 0:
-                print("Can not connect to database")
-                print("Retrying...")
+                logger.warning("Can not connect to database")
+                logger.info("Retrying...")
 
     count = count + 1
 
@@ -137,7 +151,7 @@ def WebScrapper(URL, sourceLink, Id=0):
                 crawledDate = record["crawlDate"]
                 timeDifference = currentDate - crawledDate
                 if record["isCrawled"] and timeDifference < Config["Crawling_Time"]:
-                    print(URL + " Already Crawled")
+                    logger.debug(URL + " Already Crawled")
                     return
                 elif record["isCrawled"] and timeDifference >= Config["Crawling_Time"]:
                     linkDicts[Id] = record
@@ -154,16 +168,20 @@ def WebScrapper(URL, sourceLink, Id=0):
                     collection.delete_one(record)
                     count -= 1
                     break
+    except KeyboardInterrupt:
+        exit()
     except:
         if Id == 0:
-            print("Can not connect to database")
-            print("Retrying...")
+            logger.warning("Can not connect to database")
+            logger.info("Retrying...")
         WebScrapper(URL, sourceLink, Id)
 
-    print("Crawling " + URL)
 
     try:
         r = requests.get(URL, headers=headers)
+        logger.debug("Crawling " + URL)
+    except KeyboardInterrupt:
+        exit()
     except:
         connected = isConnected(Id)
         if connected:
@@ -186,7 +204,7 @@ def WebScrapper(URL, sourceLink, Id=0):
             continue
 
         if len(link) > 1 and link[0] == "/":
-            link = URL + link
+            link = requests.compat.urljoin(URL, link)
             if link[-1] == "/":
                 link = link[:-1]
         elif link[:4] == "http":
@@ -202,6 +220,9 @@ def WebScrapper(URL, sourceLink, Id=0):
     sourceList.append(URL)
 
 
+if count >= Config["Links_Limit"]:
+    print("Database contain maximum number of documents")
+    exit()
 WebScrapper(Config["Start_Link"], "Manual Input")
 
 def Scrap(Id):
@@ -221,6 +242,8 @@ def Scrap(Id):
                 linksList.pop(0)
                 sourceList.pop(0)
                 time.sleep(Config["Wait_Time"])
+        except KeyboardInterrupt:
+            exit()
         except:
             linksList.pop(0)
             sourceList.pop(0)
@@ -243,6 +266,6 @@ class MyThread(threading.Thread):
         Scrap(self.id)
 
 
-for i in range(Config["Parallel_Threads"]):
-    thread = MyThread(i)
+threads = [MyThread(i) for i in range(Config["Parallel_Threads"])]
+for thread in threads:
     thread.start()
